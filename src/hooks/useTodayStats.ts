@@ -1,46 +1,27 @@
 // src/hooks/useTodayStats.ts
-// Fetches all data needed for the Today screen in parallel.
-// Re-runs whenever selectedDate OR activityVersion changes.
-// Uses st_health schema — never supabase.from() directly.
-
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 
 export interface TodayStats {
-  // Gym
   gymLogged: boolean
   gymSessionCount: number
-
-  // Food — summed from individual food_log rows
   calories: number
   protein: number
   carbs: number
   fat: number
-
-  // Physio
-  physioLogged: boolean       // any record exists for this date
-  physioAttended: boolean     // attended = true
-
-  // Sleep
+  physioLogged: boolean
+  physioAttended: boolean
   sleepLogged: boolean
   sleepDurationMins: number | null
   sleepQuality: number | null
-
-  // Steps
   steps: number
-
-  // Targets (from profile)
   targetCalories: number
   targetProtein: number
   targetCarbs: number
   targetFat: number
   targetWater: number
-
-  // Check-ins
   morningDone: boolean
   nightDone: boolean
-
-  // Meta
   isLoading: boolean
   error: string | null
 }
@@ -55,8 +36,8 @@ const DEFAULT_TARGETS = {
 
 export function useTodayStats(
   userId: string | null,
-  selectedDate: string,   // YYYY-MM-DD local (IST)
-  activityVersion: number // from UserContext — bumped after every mutation
+  selectedDate: string,
+  activityVersion: number
 ): TodayStats {
   const [stats, setStats] = useState<TodayStats>({
     gymLogged: false,
@@ -81,68 +62,22 @@ export function useTodayStats(
   useEffect(() => {
     if (!userId) return
 
-    const fetch = async () => {
+    const fetchStats = async () => {
       setStats(s => ({ ...s, isLoading: true, error: null }))
 
       const db = supabase.schema('st_health')
 
-      const [
-        gymRes,
-        foodRes,
-        physioRes,
-        sleepRes,
-        stepsRes,
-        profileRes,
-        checkinRes,
-      ] = await Promise.all([
-        db
-          .from('gym_sessions')
-          .select('id')
-          .eq('user_id', userId)
-          .eq('date', selectedDate),
+      const [gymRes, foodRes, physioRes, sleepRes, stepsRes, profileRes, checkinRes] =
+        await Promise.all([
+          db.from('gym_sessions').select('id').eq('user_id', userId).eq('date', selectedDate),
+          db.from('food_logs').select('calories, protein, carbs, fat').eq('user_id', userId).eq('date', selectedDate),
+          db.from('physio_sessions').select('attended').eq('user_id', userId).eq('date', selectedDate).maybeSingle(),
+          db.from('sleep_logs').select('duration_mins, quality').eq('user_id', userId).eq('date', selectedDate).maybeSingle(),
+          db.from('activity_logs').select('steps').eq('user_id', userId).eq('date', selectedDate).maybeSingle(),
+          db.from('profiles').select('target_calories, target_protein, target_carbs, target_fat, target_water').eq('id', userId).maybeSingle(),
+          db.from('daily_checkins').select('morning_text, night_text').eq('user_id', userId).eq('entry_date', selectedDate).maybeSingle(),
+        ])
 
-        db
-          .from('food_logs')
-          .select('calories, protein, carbs, fat')
-          .eq('user_id', userId)
-          .eq('date', selectedDate),
-
-        db
-          .from('physio_sessions')
-          .select('attended')
-          .eq('user_id', userId)
-          .eq('date', selectedDate)
-          .maybeSingle(),
-
-        db
-          .from('sleep_logs')
-          .select('duration_mins, quality')
-          .eq('user_id', userId)
-          .eq('date', selectedDate)
-          .maybeSingle(),
-
-        db
-          .from('activity_logs')
-          .select('steps')
-          .eq('user_id', userId)
-          .eq('date', selectedDate)
-          .maybeSingle(),
-
-        db
-          .from('profiles')
-          .select('target_calories, target_protein, target_carbs, target_fat, target_water')
-          .eq('id', userId)
-          .maybeSingle(),
-
-        db
-          .from('daily_checkins')
-          .select('morning_text, night_text')
-          .eq('user_id', userId)
-          .eq('entry_date', selectedDate)
-          .maybeSingle(),
-      ])
-
-      // Check for any errors
       const errs = [gymRes, foodRes, physioRes, sleepRes, stepsRes, profileRes, checkinRes]
         .map(r => r.error?.message)
         .filter(Boolean)
@@ -152,14 +87,12 @@ export function useTodayStats(
         return
       }
 
-      // Sum food macros from individual rows (Option A)
       const food = foodRes.data ?? []
       const calories = food.reduce((sum, r) => sum + (r.calories ?? 0), 0)
       const protein  = food.reduce((sum, r) => sum + (r.protein  ?? 0), 0)
       const carbs    = food.reduce((sum, r) => sum + (r.carbs    ?? 0), 0)
       const fat      = food.reduce((sum, r) => sum + (r.fat      ?? 0), 0)
 
-      // Profile targets — fall back to defaults if no profile row yet
       const p = profileRes.data
       const targets = p ? {
         targetCalories: p.target_calories ?? DEFAULT_TARGETS.targetCalories,
@@ -171,17 +104,17 @@ export function useTodayStats(
 
       setStats({
         gymLogged:        (gymRes.data?.length ?? 0) > 0,
-        gymSessionCount:  gymRes.data?.length ?? 0,
+        gymSessionCount:   gymRes.data?.length ?? 0,
         calories:  Math.round(calories),
         protein:   Math.round(protein),
         carbs:     Math.round(carbs),
         fat:       Math.round(fat),
-        physioLogged:   physioRes.data !== null,
-        physioAttended: physioRes.data?.attended ?? false,
+        physioLogged:      physioRes.data !== null,
+        physioAttended:    physioRes.data?.attended ?? false,
         sleepLogged:       sleepRes.data !== null,
         sleepDurationMins: sleepRes.data?.duration_mins ?? null,
         sleepQuality:      sleepRes.data?.quality ?? null,
-        steps: stepsRes.data?.steps ?? 0,
+        steps:             stepsRes.data?.steps ?? 0,
         ...targets,
         morningDone: !!checkinRes.data?.morning_text,
         nightDone:   !!checkinRes.data?.night_text,
@@ -190,7 +123,7 @@ export function useTodayStats(
       })
     }
 
-    fetch()
+    fetchStats()
   }, [userId, selectedDate, activityVersion])
 
   return stats
