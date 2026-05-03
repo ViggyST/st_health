@@ -1,5 +1,6 @@
 // src/pages/Today.tsx
 import { DateSelector } from '../components/common/DateSelector'
+import { XPCard } from '../components/today/XPCard'
 import { useTodayStats } from '../hooks/useTodayStats'
 import { useUserContext } from '../contexts/UserContext'
 import { useSelectedDate } from '../contexts/SelectedDateContext'
@@ -28,8 +29,7 @@ export function Today() {
 
       <Greeting />
 
-      {/* XP Card — Sprint 1.3 */}
-      <div className="skeleton" style={{ height: 100, borderRadius: 16, marginBottom: 16 }} />
+      <XPCard />
 
       <p style={{ fontFamily: 'var(--font-body)', fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
         Today's Progress
